@@ -1,0 +1,21 @@
+runtime: nodejs18
+env_variables:
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+functions:
+  - name: generateText
+    source: ./src/functions
+    entry_point: generateText
+    trigger:
+      http:
+        cors:
+          origin: "*"
+          methods:
+            - POST
+            - OPTIONS
+          headers:
+            - Content-Type
+          max_age: 3600
+    environment_variables:
+      NODE_ENV: "production" 
