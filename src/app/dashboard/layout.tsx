@@ -1,21 +1,23 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-export default async function DashboardLayout({
+export const dynamic = 'force-dynamic';
+
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createServerComponentClient({ cookies });
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const router = useRouter();
+  const supabase = createClientComponentClient();
 
-  if (!session) {
-    redirect('/auth/login');
-  }
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
+  };
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -44,14 +46,12 @@ export default async function DashboardLayout({
               </div>
             </div>
             <div className="flex items-center">
-              <form action="/auth/signout" method="post">
-                <button
-                  type="submit"
-                  className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Sign out
-                </button>
-              </form>
+              <button
+                onClick={handleSignOut}
+                className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
+              >
+                Sign out
+              </button>
             </div>
           </div>
         </div>

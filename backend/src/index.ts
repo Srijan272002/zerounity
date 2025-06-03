@@ -80,6 +80,19 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Add a root route handler
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    message: 'Backend API server is running',
+    endpoints: {
+      health: '/health',
+      auth: '/auth/*',
+      generate: '/api/generate-text'
+    }
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 }); 

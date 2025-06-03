@@ -4,49 +4,29 @@ import type { NextRequest } from 'next/server';
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
-  
-  // Path checks
-  const isAuthPage = req.nextUrl.pathname.startsWith('/auth');
-  const isApiRoute = req.nextUrl.pathname.startsWith('/api');
-  const isRootPage = req.nextUrl.pathname === '/';
-  const isPublicAsset = req.nextUrl.pathname.startsWith('/_next') || 
-                        req.nextUrl.pathname.includes('/favicon.ico');
-  
-  // Only protected routes need auth - specifically dashboard routes
-  const isProtectedRoute = req.nextUrl.pathname.startsWith('/dashboard');
-  
-  // Skip auth check for public routes
-  if (!isProtectedRoute && !isAuthPage) {
+  const supabase = createMiddlewareClient({ req, res });
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  // Allow access to the landing page and auth routes without authentication
+  if (req.nextUrl.pathname === '/') {
     return res;
   }
-  
-  try {
-    const supabase = createMiddlewareClient({ req, res });
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    // Redirect if on auth page but already logged in
-    if (isAuthPage && session) {
-      return NextResponse.redirect(new URL('/dashboard', req.url));
-    }
-    
-    // Redirect to login if accessing protected route without session
-    if (isProtectedRoute && !session) {
-      return NextResponse.redirect(new URL('/auth/login', req.url));
-    }
-  } catch (error) {
-    console.error('Middleware error:', error);
-    
-    // If auth fails and trying to access protected route, redirect to login
-    if (isProtectedRoute) {
-      return NextResponse.redirect(new URL('/auth/login', req.url));
-    }
+
+  // If user is not signed in and the current path is not /auth/login,
+  // redirect the user to /auth/login
+  if (!session && !req.nextUrl.pathname.startsWith('/auth')) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = '/auth/login';
+    redirectUrl.searchParams.set('redirectTo', req.nextUrl.pathname);
+    return NextResponse.redirect(redirectUrl);
   }
-  
+
   return res;
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }; 
