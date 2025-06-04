@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
-import { User } from '@shared/types';
+import { User } from '../../types/shared';
 
 export const userRouter = router({
   getUser: publicProcedure

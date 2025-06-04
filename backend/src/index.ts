@@ -9,6 +9,9 @@ import fileUpload from 'express-fileupload';
 import { defaultModel } from './config/google-cloud';
 import { z } from 'zod';
 import authRoutes from './routes/auth';
+import aiRoutes from './routes/ai.routes';
+import narrativeRoutes from './routes/narrative';
+import codeSynthesisRoutes from './routes/code-synthesis';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -23,6 +26,9 @@ app.use(fileUpload({
 
 // Auth routes
 app.use('/auth', authRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/narrative', narrativeRoutes);
+app.use('/api/code-synthesis', codeSynthesisRoutes);
 
 const requestSchema = z.object({
   prompt: z.string().min(1).max(1000),
