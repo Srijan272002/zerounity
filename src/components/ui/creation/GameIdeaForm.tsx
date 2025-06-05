@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,8 +25,6 @@ interface GameIdeaFormProps {
   onSubmit: (data: {
     prompt: string;
     gameType: string;
-    genre: string;
-    additionalDetails: string;
   }) => void;
 }
 
@@ -94,12 +93,11 @@ const genres = [
 ];
 
 export function GameIdeaForm({ onSubmit }: GameIdeaFormProps) {
+  const router = useRouter();
   const [prompt, setPrompt] = useState('');
   const [gameType, setGameType] = useState('');
-  const [genre, setGenre] = useState('');
-  const [additionalDetails, setAdditionalDetails] = useState('');
-  const [aiSuggestion, setAiSuggestion] = useState('');
   const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState('');
   const [agents, setAgents] = useState<AgentStatus[]>(initialAgents);
   const [steps, setSteps] = useState<GenerationStep[]>(initialSteps);
   const [currentAgent, setCurrentAgent] = useState<string>();
@@ -112,30 +110,53 @@ export function GameIdeaForm({ onSubmit }: GameIdeaFormProps) {
     if (isGenerating) {
       webSocketService.connect();
       const unsubscribe = webSocketService.subscribe((message) => {
+        console.log('Received WebSocket message:', message);
+        
         if (message.type === 'status_update') {
-          setAgents(message.data.agents);
-          setCurrentAgent(message.data.currentAgent);
-          setSteps(message.data.steps);
-          setCurrentStep(message.data.currentStep);
+          const { agents: updatedAgents, currentAgent, steps: updatedSteps, currentStep } = message.data;
+          console.log('Updating generation status:', { updatedAgents, currentAgent, updatedSteps, currentStep });
+          
+          setAgents(updatedAgents);
+          setCurrentAgent(currentAgent);
+          setSteps(updatedSteps);
+          setCurrentStep(currentStep);
         } else if (message.type === 'error') {
+          console.error('Generation error:', message.data);
           if (!message.data.recoverable) {
             setError(message.data.message);
             setIsGenerating(false);
           }
         } else if (message.type === 'generation_complete') {
-          setIsGenerating(false);
-          if (!message.data.success) {
+          console.log('Generation completed:', message.data);
+          if (message.data.success) {
+            // Reset form state
+            setPrompt('');
+            setGameType('');
+            setIsGenerating(false);
+            // Directly start the game in a new window/tab
+            window.open(`/game/play?session=${sessionId}`, '_blank');
+          } else {
             setError(message.data.message);
+            setIsGenerating(false);
           }
         }
       });
 
       return () => {
         unsubscribe();
-        webSocketService.disconnect();
+        if (!isGenerating) {
+          webSocketService.disconnect();
+        }
       };
     }
-  }, [isGenerating]);
+  }, [isGenerating, sessionId, router]);
+
+  // Add a cleanup effect when component unmounts
+  useEffect(() => {
+    return () => {
+      webSocketService.disconnect();
+    };
+  }, []);
 
   const handleGenerateIdea = async () => {
     setIsGeneratingSuggestion(true);
@@ -159,26 +180,41 @@ export function GameIdeaForm({ onSubmit }: GameIdeaFormProps) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // Validate form
+    if (!prompt || !gameType) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
     setError(undefined);
     setIsGenerating(true);
     setAgents(initialAgents);
     setSteps(initialSteps);
 
     try {
-      const id = await webSocketService.startGeneration({
-        prompt,
-        gameType,
-        genre,
-        additionalDetails,
+      console.log('Attempting to start WebSocket connection...');
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Generation request timed out')), 15000);
       });
-      setSessionId(id);
+
+      const id = await Promise.race([
+        webSocketService.startGeneration({
+          prompt,
+          gameType,
+        }),
+        timeoutPromise
+      ]);
+
+      console.log('WebSocket connection started, session ID:', id);
+      setSessionId(id as string);
       onSubmit({
         prompt,
         gameType,
-        genre,
-        additionalDetails,
       });
     } catch (error) {
+      console.error('Game generation error:', error);
       setError('Failed to start generation. Please try again.');
       setIsGenerating(false);
     }
@@ -195,106 +231,69 @@ export function GameIdeaForm({ onSubmit }: GameIdeaFormProps) {
     webSocketService.retryStep(stepId);
   };
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setAdditionalDetails(e.target.value);
-  };
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-6">
         <div>
           <label className="block text-lg font-medium text-white mb-2">
             Describe your game idea
           </label>
-          <div className="flex gap-4">
+          <div className="relative">
             <Textarea
-              placeholder="Enter your game idea or concept..."
+              placeholder="How about a game where the player controls a time-traveling scientist who must solve puzzles by manipulating objects across different time periods?"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              className="h-32 flex-1 bg-[#1a1625] border-purple-500/20 focus:border-purple-500 text-white placeholder:text-gray-400"
-              required
+              className="h-24 bg-[#1a1625] border-purple-500/20 focus:border-purple-500 text-white placeholder:text-gray-400"
             />
             <Button
               type="button"
-              variant="outline"
-              className="mt-8 whitespace-nowrap border-purple-500/20 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
+              variant="ghost"
+              size="icon"
+              className="absolute right-2 top-2 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
               onClick={handleGenerateIdea}
               disabled={isGeneratingSuggestion}
             >
-              <Wand2 className="w-4 h-4 mr-2" />
-              Generate Idea
+              {isGeneratingSuggestion ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Wand2 className="h-5 w-5" />
+              )}
             </Button>
           </div>
+          {aiSuggestion && (
+            <div className="mt-2 p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className="flex items-start gap-2">
+                <Lightbulb className="h-5 w-5 text-purple-400 mt-0.5" />
+                <p className="text-sm text-gray-300">{aiSuggestion}</p>
+              </div>
+            </div>
+          )}
         </div>
 
-        {aiSuggestion && (
-          <Card className="bg-[#1a1625] border-purple-500/20">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-2">
-                <Lightbulb className="w-5 h-5 text-purple-400 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-purple-400 mb-1">
-                    AI Suggestion
-                  </p>
-                  <p className="text-sm text-gray-300">{aiSuggestion}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         <div>
-          <label className="block text-lg font-medium text-white mb-4">Game Type</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <label className="block text-lg font-medium text-white mb-4">
+            Game Type
+          </label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {gameTypes.map((type) => (
-              <button
+              <Card
                 key={type.value}
-                type="button"
-                onClick={() => setGameType(type.value)}
                 className={cn(
-                  'flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-colors',
-                  gameType === type.value
-                    ? 'border-purple-500 bg-purple-500/10 text-purple-400'
-                    : 'border-purple-500/20 hover:border-purple-500/50 text-white'
+                  'relative cursor-pointer transition-all duration-200',
+                  'bg-[#1a1625] border-purple-500/20 hover:border-purple-500/40',
+                  gameType === type.value && 'border-purple-500 bg-purple-500/10'
                 )}
+                onClick={() => setGameType(type.value)}
               >
-                <span className="text-2xl mb-2">{type.icon}</span>
-                <span className="font-medium">{type.label}</span>
-              </button>
+                <CardContent className="p-4 flex flex-col items-center justify-center text-center gap-2">
+                  <span className="text-2xl">{type.icon}</span>
+                  <span className="text-sm font-medium text-white">
+                    {type.label}
+                  </span>
+                </CardContent>
+              </Card>
             ))}
           </div>
-        </div>
-
-        <div>
-          <label className="block text-lg font-medium text-white mb-2">Genre</label>
-          <Select value={genre} onValueChange={setGenre} required>
-            <SelectTrigger className="w-full bg-[#1a1625] border-purple-500/20 text-white">
-              <SelectValue placeholder="Select genre" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1625] border-purple-500/20">
-              {genres.map((g) => (
-                <SelectItem 
-                  key={g.value} 
-                  value={g.value}
-                  className="text-white focus:bg-purple-500/10 focus:text-purple-400"
-                >
-                  {g.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <label className="block text-lg font-medium text-white mb-2">
-            Additional Details <span className="text-sm font-normal text-gray-400">(Optional)</span>
-          </label>
-          <Textarea
-            placeholder="Add any specific requirements, mechanics, or features you'd like to include..."
-            value={additionalDetails}
-            onChange={handleTextareaChange}
-            className="h-24 bg-[#1a1625] border-purple-500/20 focus:border-purple-500 text-white placeholder:text-gray-400"
-          />
         </div>
       </div>
 

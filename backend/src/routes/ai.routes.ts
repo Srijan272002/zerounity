@@ -38,7 +38,8 @@ router.post('/generate/text', async (req, res, next) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    const result = await aiService.generateText(prompt);
+    const generationId = `gen_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const result = await aiService.generateText(prompt, generationId);
     res.json({ result });
   } catch (error) {
     next(error);

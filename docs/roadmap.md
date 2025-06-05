@@ -3,13 +3,13 @@
 ## Phase 1: Project Setup & Infrastructure (2-3 weeks)
 ### Project Structure
 - [✓] Set up project directory organization
-  - [✓] Create `frontend/` directory for Next.js application
+  - [✓] Create directory for Next.js application
   - [✓] Create `backend/` directory for API and services
   - [✓] Set up shared types and utilities in `shared/` directory
   - [✓] Configure monorepo tooling (if needed)
 
 ### Development Environment
-- [✓] Initialize Next.js 14 project with TypeScript in `frontend/`
+- [✓] Initialize Next.js 14 project with TypeScript 
 - [✓] Set up Tailwind CSS and ShadcnUI
 - [✓] Configure ESLint and Prettier
 - [✓] Set up Git repository and branching strategy

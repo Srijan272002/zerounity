@@ -1,4 +1,5 @@
 import { AgentStatus } from '@/components/ui/creation/GenerationStatus';
+import { io, Socket } from 'socket.io-client';
 
 export type GenerationStep = {
   id: string;
@@ -37,37 +38,61 @@ type WebSocketMessage =
     };
 
 class WebSocketService {
-  private ws: WebSocket | null = null;
+  private socket: Socket | null = null;
   private messageHandlers: ((message: WebSocketMessage) => void)[] = [];
   private sessionId?: string;
+  private connectionPromise: Promise<void> | null = null;
 
   connect() {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.socket?.connected) return Promise.resolve();
+    
+    if (this.connectionPromise) return this.connectionPromise;
 
-    this.ws = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001');
+    console.log('Connecting to WebSocket server at:', process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001');
+    
+    this.connectionPromise = new Promise<void>((resolve, reject) => {
+      this.socket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001');
 
-    this.ws.onopen = () => {
-      console.log('WebSocket connected');
-    };
+      // Set a connection timeout
+      const timeout = setTimeout(() => {
+        reject(new Error('WebSocket connection timeout'));
+      }, 10000); // 10 second timeout
 
-    this.ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data) as WebSocketMessage;
+      this.socket.on('connect', () => {
+        console.log('Socket.IO connected');
+        clearTimeout(timeout);
+        resolve();
+      });
+
+      this.socket.on('status_update', (message: WebSocketMessage) => {
+        console.log('Received status update:', message);
         this.messageHandlers.forEach((handler) => handler(message));
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
+      });
 
-    this.ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      // Attempt to reconnect after 5 seconds
-      setTimeout(() => this.connect(), 5000);
-    };
+      this.socket.on('error', (message: WebSocketMessage) => {
+        console.error('Received WebSocket error:', message);
+        this.messageHandlers.forEach((handler) => handler(message));
+      });
 
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+      this.socket.on('generation_complete', (message: WebSocketMessage) => {
+        console.log('Generation complete:', message);
+        this.messageHandlers.forEach((handler) => handler(message));
+      });
+
+      this.socket.on('disconnect', () => {
+        console.log('Socket.IO disconnected');
+        this.connectionPromise = null;
+        // Attempt to reconnect after 5 seconds
+        setTimeout(() => this.connect(), 5000);
+      });
+
+      this.socket.on('connect_error', (error) => {
+        console.error('Socket.IO connection error:', error);
+        reject(error);
+      });
+    });
+
+    return this.connectionPromise;
   }
 
   subscribe(handler: (message: WebSocketMessage) => void) {
@@ -77,61 +102,62 @@ class WebSocketService {
     };
   }
 
-  startGeneration(data: {
+  async startGeneration(data: {
     prompt: string;
     gameType: string;
-    genre: string;
-    additionalDetails: string;
   }) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket not connected');
-    }
+    try {
+      // Ensure socket is connected
+      await this.connect();
+      
+      if (!this.socket?.connected) {
+        console.error('Socket.IO still not connected after connection attempt');
+        throw new Error('Socket.IO not connected');
+      }
 
-    this.sessionId = crypto.randomUUID();
-    this.ws.send(
-      JSON.stringify({
-        type: 'start_generation',
+      console.log('Starting generation with data:', data);
+      this.sessionId = crypto.randomUUID();
+      this.socket.emit('start_generation', {
         sessionId: this.sessionId,
         data,
-      })
-    );
+      });
 
-    return this.sessionId;
+      return this.sessionId;
+    } catch (error) {
+      console.error('Failed to start generation:', error);
+      throw error;
+    }
   }
 
   cancelGeneration() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.sessionId) {
+    if (!this.socket?.connected || !this.sessionId) {
       return;
     }
 
-    this.ws.send(
-      JSON.stringify({
-        type: 'cancel_generation',
-        sessionId: this.sessionId,
-      })
-    );
+    this.socket.emit('cancel_generation', {
+      sessionId: this.sessionId,
+    });
   }
 
   retryStep(stepId: string) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.sessionId) {
+    if (!this.socket?.connected || !this.sessionId) {
       return;
     }
 
-    this.ws.send(
-      JSON.stringify({
-        type: 'retry_step',
-        sessionId: this.sessionId,
-        stepId,
-      })
-    );
+    this.socket.emit('retry_step', {
+      sessionId: this.sessionId,
+      stepId,
+    });
   }
 
   disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.socket) {
+      console.log('Disconnecting WebSocket');
+      this.socket.disconnect();
+      this.socket = null;
     }
     this.sessionId = undefined;
+    this.connectionPromise = null;
   }
 }
 

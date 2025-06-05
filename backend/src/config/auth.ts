@@ -75,12 +75,12 @@ export const authConfig = {
           .single();
 
         if (!existingUser) {
-          // Create new user profile
+          // Create new user profile with updated schema
           await supabaseAdmin.from('users').insert({
+            auth_user_id: user.id,
             email: user.email,
-            name: profile?.name || user.email.split('@')[0],
+            display_name: profile?.name || user.email.split('@')[0],
             avatar_url: profile?.image || null,
-            provider: account.provider,
           });
         }
 
